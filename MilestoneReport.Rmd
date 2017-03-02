@@ -1,0 +1,223 @@
+---
+title: "Milestone Report"
+author: "Trevor Aeschliman"
+date: "February 7,2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Getting the Data
+The data must first be downloaded from the Coursera Capstone web page.  It includes a news, blogs, and twitter file for 4 languages.  This project will be using only the English files.
+
+Once the file has been downloaded, set the working directory to the directory which contains the file.  Then, using readLines, the files are opened up to be viewed in R.
+
+
+
+### Read Files
+
+```{r}
+setwd("C:/Users/trevo/Desktop/datascience/Capstone/final/en_US")
+connB<-file("en_US.blogs.txt",open="rb")
+blogs<-readLines(connB, skipNul=TRUE)
+connT<-file("en_US.twitter.txt",open="rb")
+twitter<-readLines(connT,skipNul=TRUE)
+connN<-file("en_US.news.txt",open="rb")
+news<-readLines(connN,skipNul=TRUE)
+
+close(connB)
+close(connT)
+close(connN)
+```
+
+##Examining the data
+
+Looking at the data, you can see that the files are simply 3 large text files.  We first look at numerical information about the text, including number of lines and number of words.  
+
+Number of lines per file
+```{r}
+length(blogs)
+length(twitter)
+length(news)
+```
+Number of Words per File
+```{r}
+library(stringi)
+blogCount<-stri_count(blogs,regex="\\S+")
+twitterCount<-stri_count(twitter,regex="\\S+")
+newsCount<-stri_count(news,regex="\\S+")
+sum(blogCount)
+sum(twitterCount)
+sum(newsCount)
+```
+
+## Sampling the Data
+
+We take samples from each of the three files, trying to make the samples roughly the same size so that the resulting file is evenly composed of news, twitter, and blog text.  We are going to check our word frequencies and n-grams on these samples.
+
+```{r}
+# Take a sample of a similar size from each source.
+set.seed(222)
+sample.blogs<-sample(blogs,length(blogs)*.025)
+sample.twitter<-sample(twitter,length(twitter)*.015)
+sample.news<-sample(news,length(news)*.025)
+
+sample0<-c(sample.blogs,sample.twitter,sample.news)
+```
+
+## Cleaning the Data
+
+
+
+```{r}
+library(tm)
+library(ggplot2)
+library(RWeka)
+
+##Removing non-ascii characters in place of apostrophes
+sample0<-gsub("[^A-Za-z][^A-Za-z][^A-Za-z]","",sample0)
+
+#Using tm library
+text0 <- VCorpus(VectorSource(sample0))
+text0 <- tm_map(text0, tolower)
+text0 <- tm_map(text0, removePunctuation)
+text0 <- tm_map(text0, removeNumbers)
+text0 <- tm_map(text0, stripWhitespace)
+connPro<-file("ProfanityList.txt",open="rb")
+profanity<-readLines(connPro,skipNul=TRUE)
+text0<-tm_map(text0,removeWords,profanity)
+close(connPro)
+
+#Remove stop words and create a new text file
+textStopless <- tm_map(text0, removeWords, stopwords("en"))
+textStopless<-tm_map(textStopless,PlainTextDocument)
+textStopless <- tm_map(textStopless, content_transformer(function(x, pattern) gsub(pattern, " ", x)), "[^A-Za-z]")
+
+# Finish with the file that retains all stop words
+text0 <- tm_map(text0, PlainTextDocument)
+text0 <- tm_map(text0, content_transformer(function(x, pattern) gsub(pattern, " ", x)), "[^A-Za-z]")
+```
+
+
+
+##Exploratory Analysis on File with Stop Words
+
+Two files have been created, one with stop words, and one without.  Because phrases with stop words will need to be predicted, it would be beneficial to have an algorithm that works on those words.  However, leaving the stop words in lowers the probabilities of other words which need to be considered, so another analysis on a file without stop words will be run. Depending on the efficiency of the prediction algorithm, both may be kept for the final project.
+
+
+We tokenize the sentences in our sample to separate out all of the words, bigrams, and trigrams in the file, and then place the n-grams in descending order by frequency.
+
+
+
+```{r}
+#words
+wordMatrix <- TermDocumentMatrix(text0)
+freq1 <- sort(rowSums(as.matrix(removeSparseTerms(wordMatrix,0.9998))), decreasing = TRUE)
+freq1 <- data.frame(word = names(freq1),frequency=freq1)
+
+#bi-grams
+bigramToken <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+bigramMatrix <- TermDocumentMatrix(text0, control = list(tokenize = bigramToken))
+freq2 <- sort(rowSums(as.matrix(removeSparseTerms(bigramMatrix,0.9997))), decreasing = TRUE)
+freq2 <- data.frame(bigram = names(freq2),frequency=freq2)
+
+#tri-grams
+trigramToken <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+trigramMatrix <- TermDocumentMatrix(text0, control = list(tokenize = trigramToken))
+freq3 <- sort(rowSums(as.matrix(removeSparseTerms(trigramMatrix,0.9997))), decreasing = TRUE)
+freq3 <- data.frame(trigram = names(freq3),frequency=freq3)
+
+#quad-grams
+quadgramToken <- function(x) NGramTokenizer(x, Weka_control(min = 4, max = 4))
+quadgramMatrix <- TermDocumentMatrix(text0, control = list(tokenize = quadgramToken))
+freq4 <- sort(rowSums(as.matrix(removeSparseTerms(quadgramMatrix,0.9999))), decreasing = TRUE)
+freq4 <- data.frame(quadgram = names(freq4),frequency=freq4)
+```
+
+
+We then plot the frequencies for the top 25 n-grams of each type.
+
+```{r}
+#words
+g1<- ggplot(freq1[1:25,],aes(reorder(word, frequency), frequency)) +
+        labs(title= "Most Common Words", x = "Word", y = "Frequency") +
+        geom_col()+
+        coord_flip()
+g1
+
+#bi-grams
+g2<- ggplot(freq2[1:25,],aes(reorder(bigram, frequency), frequency)) +
+        labs(title= "Most Common Bi-grams", x = "Bi-Gram", y = "Frequency") +
+        geom_col()+
+        coord_flip()
+g2
+
+
+#tri-grams
+g3<- ggplot(freq3[1:25,],aes(reorder(trigram, frequency), frequency)) +
+        labs(title= "Most Common Tri-Grams", x = "Tri-Gram", y = "Frequency") +
+        geom_col()+
+        coord_flip()
+g3
+```
+
+## Exploratory Analysis on File Without Stop Words
+
+
+```{r}
+#words
+wordMatrixS <- TermDocumentMatrix(textStopless)
+freq1S <- sort(rowSums(as.matrix(removeSparseTerms(wordMatrixS,0.9995))), decreasing = TRUE)
+freq1S <- data.frame(word = names(freq1S),frequency=freq1S)
+
+#bi-grams
+bigramTokenS <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+bigramMatrixS <- TermDocumentMatrix(textStopless, control = list(tokenize = bigramTokenS))
+freq2S <- sort(rowSums(as.matrix(removeSparseTerms(bigramMatrixS,0.9999))), decreasing = TRUE)
+freq2S <- data.frame(bigram = names(freq2S),frequency=freq2S)
+
+#tri-grams
+trigramTokenS <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+trigramMatrixS <- TermDocumentMatrix(textStopless, control = list(tokenize = trigramTokenS))
+freq3S <- sort(rowSums(as.matrix(removeSparseTerms(trigramMatrixS,0.9999))), decreasing = TRUE)
+freq3S <- data.frame(trigram = names(freq3S),frequency=freq3S)
+
+#quad-grams
+quadgramTokenS <- function(x) NGramTokenizer(x, Weka_control(min = 4, max = 4))
+quadgramMatrixS <- TermDocumentMatrix(text0, control = list(tokenize =quadgramTokenS))
+freq4S <- sort(rowSums(as.matrix(removeSparseTerms(quadgramMatrixS,0.999))), decreasing = TRUE)
+freq4S <- data.frame(quadgram = names(freq4S),frequency=freq4S)
+```
+
+
+We then plot the frequencies for the top 25 n-grams of each type.
+
+```{r}
+#words
+g1S<- ggplot(freq1S[1:25,],aes(reorder(word, frequency), frequency)) +
+        labs(title= "Most Common Words (Stop Words Removed)", x = "Word", y = "Frequency") +
+        geom_col()+
+        coord_flip()
+g1S
+
+#bi-grams
+g2S<- ggplot(freq2S[1:25,],aes(reorder(bigram, frequency), frequency)) +
+        labs(title= "Most Common Bi-grams(Stop Words Removed)", x = "Bi-Gram", y = "Frequency") +
+        geom_col()+
+        coord_flip()
+g2S
+
+
+#tri-grams
+g3S<- ggplot(freq3S[1:25,],aes(reorder(trigram, frequency), frequency)) +
+        labs(title= "Most Common Tri-Grams(Stop Words Removed)", x = "Tri-Gram", y = "Frequency") +
+        geom_col()+
+        coord_flip()
+g3S
+```
+
+## Model
+
+Now that we've uncovered information about the data sets, using an even sampling from each file, we need to build a predictive model that will take in a word or words and will give a predicted next word or pair of words.  To do this, we will search through our n-gram frequency data frames and display the 3 words with the highest probability of occurring next.

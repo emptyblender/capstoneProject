@@ -1,0 +1,170 @@
+---
+title: "Milestone Report"
+author: "Trevor Aeschliman"
+date: "January 27, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Getting the Data
+The data must first be downloaded from the Coursera Capstone web page.  It includes a news, blogs, and twitter file for 4 languages.  This project will be using only the English files.
+
+Once the file has been downloaded, set the working directory to the directory which contains the file.  Then, using readFile, the files are opened up to be viewed in R.
+
+
+
+### Read Files
+
+```{r}
+setwd("C:/Users/trevo/Desktop/datascience/Capstone/final/en_US")
+connB<-file("en_US.blogs.txt",open="rb")
+blogs<-readLines(connB,encoding="UTF-8", skipNul=TRUE)
+connT<-file("en_US.twitter.txt",open="rb")
+twitter<-readLines(connT,encoding="UTF-8",skipNul=TRUE)
+connN<-file("en_US.news.txt",open="rb")
+news<-readLines(connN,encoding="UTF-8",skipNul=TRUE)
+
+close(connB)
+close(connT)
+close(connN)
+```
+
+##Examining the data
+
+Looking at the data, you can see that the files are simply 3 large text files.  We first gather numerical information about the text, including number of lines and number of words.  
+
+Number of lines per file
+```{r}
+length(blogs)
+length(twitter)
+length(news)
+```
+Number of Words per File
+```{r}
+library(stringi)
+blogCount<-stri_count(blogs,regex="\\S+")
+twitterCount<-stri_count(twitter,regex="\\S+")
+newsCount<-stri_count(news,regex="\\S+")
+sum(blogCount)
+sum(twitterCount)
+sum(newsCount)
+```
+
+## Sampling the Data
+
+We take samples from each of the three files, trying to make the samples roughly the same size so that the resulting file is evenly composed of news, twitter, and blog text.  We are going to check our word frequencies and n-grams on these samples.
+
+```{r}
+# Take a sample of a similar size from each source.
+set.seed(222)
+sample.blogs<-sample(blogs,length(blogs)*.025)
+sample.twitter<-sample(twitter,length(twitter)*.01)
+sample.news<-sample(news,length(news)*.025)
+
+sample0<-c(sample.blogs,sample.twitter,sample.news)
+```
+
+## Cleaning the Data
+
+
+
+```{r}
+library(tm)
+library(dplyr)
+library(tidytext)
+library(ggplot2)
+data(stop_words)
+
+
+#removing numbers, punctuation, and non-letters from original sample
+sample0<-removeNumbers(sample0)
+sample0<-gsub("'","",sample0)
+sample0<-gsub("[^A-Za-z]"," ",sample0)
+sample0<-tolower(sample0)
+sample0<- removePunctuation(sample0)
+```
+
+
+##Exploratory Analysis
+
+We tokenize the sentences in both of our samples to separate out all of the words in the files, and then place the words in descending order by frequency.
+
+```{r}
+#Unnesting tokens
+text_df <- data_frame(line = 1:71339,text=sample0)
+na.omit(text_df)
+
+words<- text_df %>%
+  unnest_tokens(output = word, input = text, token = "words")
+
+tidy<-words %>%
+  anti_join(stop_words)
+
+#Ordering the data frame
+wordFreq<-tidy %>%
+  count(word, sort = TRUE)%>%
+  filter(n > 1000) %>%
+  mutate(word = reorder(word, n))
+
+g<- ggplot(wordFreq[1:30,],aes(x = word, y = n)) +
+    geom_col()+
+    coord_flip()
+
+g
+
+##Determine rough "n" value for top 25% of words
+tail(wordFreq[wordFreq$n > quantile(wordFreq$n,prob=1-25/100),])
+
+```
+
+
+
+```{r}
+##BI-GRAMS
+
+bigrams<- text_df%>%
+   unnest_tokens(output = bigram, input = text, token = "ngrams", n = 2)
+
+
+#Ordering the data frame
+wordFreq2<-bigrams %>%
+  count(bigram, sort = TRUE)%>%
+  filter(n > 1000) %>%
+  mutate(bigram = reorder(bigram, n))
+
+g2<- ggplot(wordFreq2[1:30,],aes(x = bigram, y = n)) +
+    geom_col()+
+    coord_flip()
+
+g2
+```
+
+
+
+```{r}
+##TRI-GRAMS
+trigrams<- text_df %>%
+ unnest_tokens(output = trigram, input = text, token = "ngrams", n = 3)
+
+
+#Ordering the data frame
+wordFreq3<-trigrams %>%
+  count(trigram, sort = TRUE)%>%
+  filter(n > 25) %>%
+  mutate(trigram = reorder(trigram, n))
+
+g3<- ggplot(wordFreq3[1:30,],aes(x = trigram, y = n)) +
+    geom_col()+
+    coord_flip()
+
+g3
+```
+
+
+
+
+
+## Model
